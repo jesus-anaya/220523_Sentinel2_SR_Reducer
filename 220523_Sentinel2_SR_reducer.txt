@@ -1,0 +1,128 @@
+Anaya, J.A.; Gutiérrez-Vélez, V.H.; Pacheco-Pascagaza, A.M.; Palomino-Ángel, S.; Han, N.; Balzter, H. Drivers of Forest Loss in a Megadiverse Hotspot on the Pacific Coast of Colombia. Remote Sensing 2020, 12, 1235. https://doi.org/10.3390/rs12081235
+
+
+
+
+
+var geometry = ee.FeatureCollection("users/jesusanayaco/Area_LBRPutumayo");
+
+
+/**
+ * Function to mask clouds using the Sentinel-2 QA band
+ * @param {ee.Image} image Sentinel-2 image
+ * @return {ee.Image} cloud masked Sentinel-2 image
+ */
+function maskS2clouds(image) {
+  var qa = image.select('QA60');
+
+  // Bits 10 and 11 are clouds and cirrus, respectively.
+  var cloudBitMask = 1 << 10;
+  var cirrusBitMask = 1 << 11;
+
+  // Both flags should be set to zero, indicating clear conditions.
+  var mask = qa.bitwiseAnd(cloudBitMask).eq(0)
+      .and(qa.bitwiseAnd(cirrusBitMask).eq(0));
+
+  return image.updateMask(mask).divide(10000);
+}
+
+// Map the function over one year of data and take the median.
+// Load Sentinel-2 SR reflectance data.
+// SR might not work before 2019.
+var dataset = ee.ImageCollection('COPERNICUS/S2_SR')
+                  .filterDate('2015-01-01', '2022-07-30')
+                  // Pre-filter to get less cloudy granules.
+                  .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 30))
+                  .map(maskS2clouds)
+                  .filterBounds(geometry);
+                  print(dataset, 'Collection S2_SR'); 
+                  
+                  
+// Compute the median in each band, each pixel.
+// reproject form WGS84 to UTM18N
+// Band names are B1_median, B2_median, etc.
+var median_WGS84 = dataset.reduce(ee.Reducer.median());
+var proj = ee.Projection('EPSG:32618');
+var median_utm = median_WGS84.reproject(proj, null, 10);
+
+//.reproject('EPSG:4326', null, 500);
+//Changing projection adds a problem of size processing, avoid.
+print(median_WGS84.projection());
+print(median_utm.projection());
+
+
+
+var rgbVis = {
+  min: 0.0,
+  max: 0.35,
+  bands: ['B8_median', 'B11_median', 'B4_median'],
+};
+
+
+//Map.setCenter(-72.43925, 3.44876, 16);
+Map.addLayer(median_WGS84, rgbVis, 'RGB_S2');
+
+Map.addLayer(geometry);
+
+//Calculate NDVI
+
+var nir = median_WGS84.select('B8_median');
+var red = median_WGS84.select('B4_median');
+var ndvi = nir.subtract(red).divide(nir.add(red)).rename('NDVI');
+var ndvi_img = ndvi.addBands(ndvi);
+ 
+//EXPORT
+ 
+ var B2 = median_WGS84.select('B2_median');
+      Export.image.toDrive({
+      image: B2,
+      description: 'S2_B2_median_WGS84',
+      scale: 10,
+      region: geometry,
+      maxPixels: 1e9
+      });
+
+ var B3 = median_WGS84.select('B3_median');
+      Export.image.toDrive({
+      image: B3,
+      description: 'S2_B3_median_WGS84',
+      scale: 10,
+      region: geometry,
+      maxPixels: 1e9
+      });
+      
+ var B4 = median_WGS84.select('B4_median');
+      Export.image.toDrive({
+      image: B4,
+      description: 'S2_B4_median_WGS84',
+      scale: 10,
+      region: geometry,
+      maxPixels: 1e9
+      });
+      
+ var B8 = median_WGS84.select('B8_median');
+      Export.image.toDrive({
+      image: B8,
+      description: 'S2_B8_median_WGS84',
+      scale: 10,
+      region: geometry,
+      maxPixels: 1e9
+      });
+      
+ var B12 = median_WGS84.select('B12_median');
+      Export.image.toDrive({
+      image: B12,
+      description: 'S2_B12_median_WGS84',
+      scale: 10,
+      region: geometry,
+      maxPixels: 1e9
+      });
+
+ Export.image.toDrive({
+  image: ndvi_img,
+  description: 'NDVI_SR_10m',
+  scale: 10,
+  region: geometry,
+  maxPixels: 1e9,
+  fileFormat: 'GeoTIFF'
+});
